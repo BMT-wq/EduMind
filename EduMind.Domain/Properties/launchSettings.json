@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "EduMind.Domain": {
+      "commandName": "Project"
+    }
+  }
+}

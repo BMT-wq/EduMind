@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Core/">
+    <Project Path="EduMind.Application/EduMind.Application.csproj" />
+    <Project Path="EduMind.Domain/EduMind.Domain.csproj" />
+  </Folder>
+  <Folder Name="/Infrastructure/">
+    <Project Path="EduMind.Infrastructure.AI/EduMind.Infrastructure.AI.csproj" />
+    <Project Path="EduMind.Infrastructure.Data/EduMind.Infrastructure.Data.csproj" />
+    <Project Path="EduMind.Infrastructure.Storage/EduMind.Infrastructure.Storage.csproj" />
+  </Folder>
+  <Folder Name="/Prensentation/">
+    <Project Path="EduMind.WebApi.Tests/EduMind.WebApi.Tests.csproj" />
+    <Project Path="EduMind.WebApi/EduMind.WebApi.csproj" />
+  </Folder>
+</Solution>
