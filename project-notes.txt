@@ -161,6 +161,95 @@ dotnet ef migrations list --project EduMind.Infrastructure.Data --startup-projec
 dotnet ef database update <TênMigration> --project EduMind.Infrastructure.Data --startup-project EduMind.WebApi
 
 ================================================================================
+[DOCKER INFRASTRUCTURE]  (SESSION 3)
+================================================================================
+
+File: docker-compose.yml (nằm ở root solution)
+
+3 Services:
+  ┌──────────────┬──────────────────────────────────────────┬─────────────┐
+  │ Service      │ Image                                    │ Port(s)     │
+  ├──────────────┼──────────────────────────────────────────┼─────────────┤
+  │ sqlserver    │ mcr.microsoft.com/mssql/server:2022-latest│ 1433        │
+  │ qdrant       │ qdrant/qdrant:latest                     │ 6333, 6334  │
+  │ redis        │ redis:latest                             │ 6379        │
+  └──────────────┴──────────────────────────────────────────┴─────────────┘
+
+SQL Server:
+  SA_PASSWORD: EduMind@2024#Str!
+  MSSQL_PID: Developer (miễn phí, đầy đủ tính năng)
+  Healthcheck: sqlcmd -Q 'SELECT 1'
+
+Qdrant:
+  Port 6333: REST API (dashboard: http://localhost:6333/dashboard)
+  Port 6334: gRPC (Qdrant.Client dùng port này)
+
+Redis:
+  AOF persistence: --appendonly yes
+  Max memory: 512mb, policy: allkeys-lru
+
+Named Volumes (Docker quản lý, không mất khi container down):
+  edumind_sqlserver_data  → /var/opt/mssql
+  edumind_qdrant_data     → /qdrant/storage
+  edumind_redis_data      → /data
+
+LỆNH TERMINAL:
+  # Khởi chạy nền (detach)
+  docker compose up -d
+
+  # Kiểm tra trạng thái tất cả services
+  docker compose ps
+
+  # Xem log realtime của tất cả services
+  docker compose logs -f
+
+  # Xem log một service cụ thể
+  docker compose logs -f sqlserver
+
+  # Dừng và xóa containers (GIỮ nguyên volumes)
+  docker compose down
+
+  # Dừng + xóa containers + XÓA LUÔN VOLUMES (cẩn thận — mất dữ liệu!)
+  docker compose down -v
+
+  # Restart một service cụ thể
+  docker compose restart sqlserver
+
+  # Xem danh sách volumes
+  docker volume ls
+
+================================================================================
+[APPSETTINGS.JSON — CONNECTION STRINGS]
+================================================================================
+
+File: EduMind.WebApi/appsettings.json
+
+ConnectionStrings:
+  DefaultConnection (SQL Server):
+    Server=localhost,1433;Database=EduMindDb;User Id=SA;Password=EduMind@2024#Str!;
+    TrustServerCertificate=True;MultipleActiveResultSets=True;
+
+  RedisConnection:
+    localhost:6379,abortConnect=false,connectTimeout=5000,syncTimeout=5000
+
+AISettings:
+  GeminiApiKey:            YOUR_GEMINI_API_KEY_HERE  ← Thay bằng key thật
+  GeminiChatModelId:       gemini-2.0-flash
+  GeminiEmbeddingModelId:  text-embedding-004
+  EmbeddingDimension:      768
+  ChunkSize:               1000
+  ChunkOverlap:            100
+  QdrantHost:              localhost
+  QdrantPort:              6334
+  RedisConnectionString:   localhost:6379,abortConnect=false
+  CacheExpirationMinutes:  60
+
+LƯU Ý BẢO MẬT:
+  - KHÔNG commit GeminiApiKey vào Git
+  - Trong Production: dùng User Secrets hoặc Azure Key Vault
+  - appsettings.Development.json: override với cấu hình local
+
+================================================================================
 [LỊCH SỬ SESSION]
 ================================================================================
 
@@ -180,4 +269,14 @@ SESSION 2 — 2026-08-17:
   ✅ Tạo file project-notes.txt
   ✅ Commit và push lên GitHub
 
+SESSION 3 — 2026-08-17:
+  ✅ Tạo docker-compose.yml với 3 services (SQL Server 2022, Qdrant, Redis)
+     - Named volumes để bảo toàn dữ liệu
+     - Healthcheck cho SQL Server và Redis
+     - AOF persistence cho Redis
+  ✅ Cập nhật appsettings.json đầy đủ ConnectionStrings + AISettings
+  ✅ Cập nhật project-notes.txt
+  ✅ Commit và push lên GitHub
+
 ================================================================================
+

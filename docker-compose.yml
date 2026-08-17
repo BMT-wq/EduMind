@@ -1,0 +1,103 @@
+# ================================================================================
+#  EduMind — Docker Compose Infrastructure
+#  Mô tả: Khởi chạy đồng loạt 3 database services cho hệ thống EduMind
+#
+#  CÁCH DÙNG:
+#    Khởi chạy (nền): docker compose up -d
+#    Dừng toàn bộ:    docker compose down
+#    Xem log:         docker compose logs -f
+#    Xem trạng thái:  docker compose ps
+# ================================================================================
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  #  SQL SERVER 2022
+  #  Mục đích: Lưu trữ dữ liệu có cấu trúc — Users, Documents, Schedules,
+  #            Quizzes, Questions (ánh xạ từ EduMind.Domain entities qua EF Core)
+  # ─────────────────────────────────────────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: edumind-sqlserver
+    restart: unless-stopped            # Tự khởi động lại trừ khi bị dừng thủ công
+    environment:
+      ACCEPT_EULA: "Y"                 # Bắt buộc chấp nhận license Microsoft SQL Server
+      SA_PASSWORD: "EduMind@2024#Str!" # Mật khẩu SA — phải đủ mạnh (chữ hoa+thường+số+ký tự đặc biệt)
+      MSSQL_PID: "Developer"          # Dùng bản Developer (miễn phí, đầy đủ tính năng)
+    ports:
+      - "1433:1433"                    # Port 1433: SQL Server giao tiếp với .NET (EF Core)
+                                       # Connection String: Server=localhost,1433
+    volumes:
+      - sqlserver_data:/var/opt/mssql  # Ánh xạ thư mục data của SQL Server ra volume Docker
+                                       # → Dữ liệu an toàn ngay cả khi container bị xóa
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'EduMind@2024#Str!' -Q 'SELECT 1' -C -N || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s               # SQL Server cần ~30s để khởi động hoàn toàn
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  #  QDRANT VECTOR DATABASE
+  #  Mục đích: Lưu trữ Vector Embeddings cho tính năng AI RAG (Retrieval-Augmented
+  #            Generation) — được EduMind.Infrastructure.AI sử dụng qua Qdrant.Client
+  # ─────────────────────────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: edumind-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"                    # Port 6333: REST API (dùng để kiểm tra qua browser/curl)
+                                       # Ví dụ: http://localhost:6333/dashboard
+      - "6334:6334"                    # Port 6334: gRPC API (Qdrant.Client .NET dùng port này)
+                                       # QdrantClient kết nối: host=localhost, port=6334
+    volumes:
+      - qdrant_data:/qdrant/storage    # Ánh xạ thư mục lưu collection và vectors ra volume Docker
+                                       # → Không mất embedding data khi restart container
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  #  REDIS CACHE
+  #  Mục đích: Bộ nhớ đệm (cache) cho kết quả AI Tutor — tránh gọi lại Gemini API
+  #            cho cùng một câu hỏi. RedisCacheService dùng StackExchange.Redis.
+  # ─────────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:latest
+    container_name: edumind-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfilename "edumind-appendonly.aof"
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    # Giải thích command:
+    #   --appendonly yes           → Bật AOF persistence: mỗi lệnh ghi được log ra file
+    #                                Đảm bảo dữ liệu không mất khi Redis restart
+    #   --maxmemory 512mb          → Giới hạn RAM tối đa Redis được dùng
+    #   --maxmemory-policy allkeys-lru → Khi đầy bộ nhớ: xóa key ít dùng nhất (LRU)
+    ports:
+      - "6379:6379"                    # Port 6379: Redis mặc định
+                                       # ConnectionString: localhost:6379
+    volumes:
+      - redis_data:/data               # Ánh xạ thư mục lưu AOF và RDB snapshot
+                                       # → Dữ liệu cache bền vững giữa các lần restart
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+# ================================================================================
+#  VOLUMES — Khai báo named volumes để Docker quản lý
+#  Named volumes tồn tại độc lập với container, không bị xóa khi container down
+#  Vị trí vật lý trên host: C:\ProgramData\docker\volumes\ (Windows)
+# ================================================================================
+volumes:
+  sqlserver_data:
+    name: edumind_sqlserver_data      # Tên rõ ràng để dễ identify khi chạy: docker volume ls
+  qdrant_data:
+    name: edumind_qdrant_data
+  redis_data:
+    name: edumind_redis_data
