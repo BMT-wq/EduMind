@@ -1,0 +1,183 @@
+================================================================================
+  EDUMIND — GHI CHÚ DỰ ÁN (PROJECT NOTES)
+  Cập nhật lần cuối: 2026-08-17
+================================================================================
+
+[TỔNG QUAN]
+  Dự án: EduMind - Không gian học tập thông minh
+  Ngôn ngữ: C# 10 (File-scoped namespaces, implicit usings)
+  Framework: .NET 10 (net10.0)
+  Kiến trúc: Clean Architecture (Domain → Application → Infrastructure → Presentation)
+  Git Remote: https://github.com/BMT-wq/EduMind.git
+
+================================================================================
+[CẤU TRÚC SOLUTION]
+================================================================================
+
+EduMind.slnx
+│
+├── /Core/
+│   ├── EduMind.Domain           ← Entities, Enums, Value Objects — KHÔNG phụ thuộc gì
+│   └── EduMind.Application      ← Interfaces, DTOs, Use Cases — chỉ phụ thuộc Domain
+│
+├── /Infrastructure/
+│   ├── EduMind.Infrastructure.AI    ← Semantic Kernel + Gemini AI + Qdrant + Redis
+│   ├── EduMind.Infrastructure.Data  ← EF Core + SQL Server (session này)
+│   └── EduMind.Infrastructure.Storage ← Firebase Storage (chưa implement)
+│
+└── /Presentation/
+    ├── EduMind.WebApi               ← ASP.NET Core Web API
+    ├── EduMind.Application.Tests    ← Unit Tests
+    └── EduMind.WebApi.Tests         ← Integration Tests
+
+================================================================================
+[DOMAIN ENTITIES (EduMind.Domain)]
+================================================================================
+
+Tất cả entities kế thừa BaseEntity:
+  - Id: Guid (Guid.NewGuid() trong constructor — KHÔNG dùng DB auto-generate)
+  - CreatedAt: DateTime (UTC, gán khi tạo)
+  - UpdatedAt: DateTime? (UTC, gán khi sửa qua UpdateTimestamp())
+
+Entities:
+  User       - FullName, Email, PasswordHash, AvatarUrl, Role, IsActive
+  Document   - Name, Description, Type, Url, FileSizeInBytes, OwnerId,
+               SharedWithUserIds(JSON), IsDeleted
+  Schedule   - Title, Description, UserId, StartTime, EndTime, Status,
+               ProgressPercentage, LinkedDocumentIds(JSON)
+  Quiz       - Title, Description, CreatedByUserId, QuestionIds(JSON),
+               TotalQuestions, TimeLimit, MaxTotalScore, PassingScore,
+               ShowResultsImmediately, ShowAnswersAfterSubmission,
+               AllowMultipleAttempts, MaxAttempts, IsPublished, PublishedDate
+  Question   - Content, QuestionType, Options(JSON), CorrectAnswer,
+               Explanation, MaxPoints, DifficultyLevel(1-4)
+
+Enums:
+  - Role: Student, Teacher, Admin
+  - DocumentType: PDF, Word, Image, Video, Excel, PowerPoint, Other
+  - ScheduleStatus: Pending, InProgress, Completed, Cancelled
+
+================================================================================
+[EduMind.Infrastructure.AI — Packages & Structure]
+================================================================================
+
+NuGet Packages:
+  - Microsoft.SemanticKernel              1.79.0
+  - Microsoft.SemanticKernel.Connectors.Google  1.79.0-alpha
+  - PdfPig                               0.1.16-alpha (official package)
+  - Qdrant.Client                        1.19.0
+  - StackExchange.Redis                  2.8.24
+  - Microsoft.Extensions.Logging         10.0.3
+  - Microsoft.Extensions.Options.ConfigurationExtensions  10.0.3
+  - Microsoft.Extensions.Options.DataAnnotations          10.0.3
+
+Folder Structure:
+  EduMind.Infrastructure.AI/
+  ├── Configuration/AISettings.cs           ← POCO cho appsettings.json
+  ├── TextChunking/TextChunker.cs           ← Sliding Window + Overlap
+  ├── DocumentParsing/PdfPigParsingService.cs
+  ├── VectorStore/QdrantVectorStoreService.cs
+  ├── Caching/RedisCacheService.cs
+  ├── Services/SemanticKernelAITutorService.cs  ← Main RAG pipeline
+  └── DependencyInjection/InfrastructureAIServiceCollectionExtensions.cs
+
+DI registration (Program.cs):
+  builder.Services.AddEduMindAIInfrastructure(builder.Configuration);
+
+appsettings.json section "AISettings":
+  GeminiApiKey, GeminiChatModelId (gemini-2.0-flash),
+  GeminiEmbeddingModelId (text-embedding-004), EmbeddingDimension (768),
+  ChunkSize (1000), ChunkOverlap (100), QdrantHost, QdrantPort (6334),
+  QdrantApiKey, RedisConnectionString, CacheExpirationMinutes (60)
+
+Luồng RAG:
+  [INGEST]  PDF → PdfPig → TextChunker → Gemini Embedding → Qdrant
+  [QUERY]   Question → Redis Cache? → Gemini Embed → Qdrant QueryAsync → Gemini Chat → Redis
+  [DELETE]  Filter-based delete từ Qdrant theo source_document
+
+================================================================================
+[EduMind.Infrastructure.Data — Packages & Structure]  (SESSION 2)
+================================================================================
+
+NuGet Packages:
+  - Microsoft.EntityFrameworkCore.SqlServer  10.0.11
+  - Microsoft.EntityFrameworkCore.Tools     10.0.11
+
+Project References: EduMind.Domain
+
+Folder Structure:
+  EduMind.Infrastructure.Data/
+  ├── Contexts/
+  │   └── ApplicationDbContext.cs      ← DbContext + auto-UpdatedAt SaveChangesAsync
+  ├── Configurations/
+  │   ├── UserConfiguration.cs         ← IEntityTypeConfiguration<User>
+  │   ├── DocumentConfiguration.cs     ← IEntityTypeConfiguration<Document>
+  │   ├── ScheduleConfiguration.cs     ← IEntityTypeConfiguration<Schedule>
+  │   ├── QuizConfiguration.cs         ← IEntityTypeConfiguration<Quiz>
+  │   └── QuestionConfiguration.cs     ← IEntityTypeConfiguration<Question>
+  ├── Migrations/                      ← Tự sinh bằng dotnet ef migrations add
+  └── DependencyInjection.cs           ← AddDataInfrastructure() extension
+
+Cơ chế SaveChangesAsync (tự động UpdatedAt):
+  1. ChangeTracker.Entries<BaseEntity>() lọc State = Modified
+  2. entry.Property("UpdatedAt").CurrentValue = DateTime.UtcNow
+  3. base.SaveChangesAsync() → SQL Server
+
+Fluent API:
+  - UserConfiguration:     Email UNIQUE index, Role as string, PasswordHash max 512
+  - DocumentConfiguration: FK OwnerId→Users (Restrict), index on IsDeleted
+  - ScheduleConfiguration: FK UserId→Users (Cascade), composite index (UserId, StartTime)
+  - QuizConfiguration:     decimal(18,2) for scores, IsPublished index
+  - QuestionConfiguration: nvarchar(max) for Content/Options, decimal(10,2) MaxPoints
+
+Relationships:
+  User (1) → (n) Document   [OwnerId FK, Restrict delete]
+  User (1) → (n) Schedule   [UserId FK, Cascade delete]
+  User (1) → (n) Quiz       [CreatedByUserId FK, Restrict delete]
+  Quiz ←→ Question          [QuestionIds: JSON string — loose coupling]
+
+DI registration (Program.cs):
+  builder.Services.AddDataInfrastructure(builder.Configuration);
+
+appsettings.json:
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=EduMind;Trusted_Connection=True;TrustServerCertificate=True;"
+  }
+
+================================================================================
+[LỆNH EF CORE MIGRATION]
+================================================================================
+
+# Tạo migration đầu tiên
+dotnet ef migrations add InitialCreate --project EduMind.Infrastructure.Data --startup-project EduMind.WebApi
+
+# Áp dụng lên SQL Server
+dotnet ef database update --project EduMind.Infrastructure.Data --startup-project EduMind.WebApi
+
+# Xem danh sách migration
+dotnet ef migrations list --project EduMind.Infrastructure.Data --startup-project EduMind.WebApi
+
+# Rollback về migration trước
+dotnet ef database update <TênMigration> --project EduMind.Infrastructure.Data --startup-project EduMind.WebApi
+
+================================================================================
+[LỊCH SỬ SESSION]
+================================================================================
+
+SESSION 1 — 2026-08-14:
+  ✅ Khởi tạo solution 8 projects (Clean Architecture)
+  ✅ Xây dựng EduMind.Infrastructure.AI (RAG pipeline hoàn chỉnh)
+  ✅ Nâng cấp packages lên .NET 10 compatible (SK 1.79.0, Qdrant 1.19.0)
+  ✅ Push lên GitHub: https://github.com/BMT-wq/EduMind.git (branch: main)
+
+SESSION 2 — 2026-08-17:
+  ✅ Xây dựng EduMind.Infrastructure.Data:
+     - EF Core 10.0.11 + SQL Server
+     - ApplicationDbContext (auto-UpdatedAt, ApplyConfigurationsFromAssembly)
+     - 5 Fluent API Configurations
+     - DependencyInjection.cs (AddDataInfrastructure)
+  ✅ Build succeeded: 0 Warnings, 0 Errors
+  ✅ Tạo file project-notes.txt
+  ✅ Commit và push lên GitHub
+
+================================================================================
