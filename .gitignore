@@ -29,4 +29,5 @@ bld/
 *.docstates
 
 # Environment / Secret configs (optional)
+appsettings.Development.json
 appsettings.*.local.json
