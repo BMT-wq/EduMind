@@ -250,6 +250,34 @@ LƯU Ý BẢO MẬT:
   - appsettings.Development.json: override với cấu hình local
 
 ================================================================================
+[SWAGGER UI & CONTROLLERS]  (SESSION 4)
+================================================================================
+
+File: EduMind.WebApi/Program.cs
+URL: http://localhost:5268/ (Trang chủ ngầm định mở trực tiếp Swagger UI)
+
+Endpoints cho phép kiểm thử interactive trên Swagger:
+  ┌─────────────────────────────┬────────┬─────────────────────────────────────────┐
+  │ Endpoint                    │ Method │ Mô tả                                   │
+  ├─────────────────────────────┼────────┼─────────────────────────────────────────┤
+  │ /api/v1/ai-tutor/ingest     │ POST   │ Upload PDF → Parse → Chunk → Embed → Qdrant
+  │ /api/v1/ai-tutor/ask        │ POST   │ Hỏi đáp RAG: Redis → Qdrant → Gemini    │
+  │ /api/v1/ai-tutor/documents  │ DELETE │ Xóa document vectors trong Qdrant        │
+  │ /api/v1/database/init-schema│ POST   │ Tự tạo Database Schema trên SQL Server  │
+  │ /api/v1/database/health     │ GET    │ Health Check: SQL Server & Redis       │
+  │ /api/v1/database/users/seed │ POST   │ Tạo mẫu 1 User test qua EF Core         │
+  │ /api/v1/database/users      │ GET    │ Lấy danh sách Users từ SQL Server       │
+  └─────────────────────────────┴────────┴─────────────────────────────────────────┘
+
+Cấu hình Swagger:
+  - GenerateDocumentationFile: true (đọc XML doc comments)
+  - RoutePrefix = string.Empty (mở thẳng tại trang gốc)
+  - Tags: AiTutor, DataTest
+
+LỆNH CHẠY WEBAPI DÀNH CHO USER KHI TEST TRÊN BÌNH THƯỜNG:
+  dotnet run --project EduMind.WebApi/EduMind.WebApi.csproj
+
+================================================================================
 [LỊCH SỬ SESSION]
 ================================================================================
 
@@ -278,5 +306,14 @@ SESSION 3 — 2026-08-17:
   ✅ Cập nhật project-notes.txt
   ✅ Commit và push lên GitHub
 
+SESSION 4 — 2026-08-17:
+  ✅ Cấu hình Swagger UI giao diện tương tác trực tiếp ở trang chủ (Root URL)
+  ✅ Tạo AiTutorController.cs (3 endpoints: Ingest PDF, Ask RAG, Delete Document)
+  ✅ Tạo DataTestController.cs (4 endpoints: Init Schema, Health check, Seed User, Get Users)
+  ✅ Kích hoạt XML Documentation trong EduMind.WebApi.csproj
+  ✅ Cập nhật project-notes.txt
+  ✅ Commit và push lên GitHub
+
 ================================================================================
+
 
